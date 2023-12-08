@@ -74,13 +74,9 @@ if 'expand_collapse_state' not in st.session_state:
 # if 'filtered_ticket' not in st.session_state:
 #     st.session_state.filtered_ticket = [event for event in st.session_state.filtered_ticket if event['BranchShortName'] in st.session_state.selected_branches]
 
-def inventoryPage(ticketN=""):
+def inventoryPage():
     if st.session_state.selected_rows is None or len(st.session_state.selected_rows)==0:
-        st.session_state.parts_df = pd.DataFrame()
-        if len(ticketN) > 0:
-            st.session_state.input_letters = ticketN
-        else:
-            st.session_state.input_letters = st.text_input("First enter Part Id or Parts Desc:", max_chars=50, key="ItemDES").upper()
+        st.session_state.input_letters = st.text_input("First enter Part Id or Parts Desc:", max_chars=50, key="ItemDES").upper()
         if st.session_state.input_letters != st.session_state.prev_input_letters and len(st.session_state.input_letters) > 0:
             st.session_state.pricingDf = inventory_Part(st.session_state.input_letters)
             st.session_state.prev_input_letters = st.session_state.input_letters
@@ -139,18 +135,6 @@ def inventoryPage(ticketN=""):
     #         st.table(st.session_state.partsDF)
 
 def main():
-    if 'first_run' not in st.session_state:
-        st.session_state.first_run = True
-    else:
-        st.session_state.first_run = False
-    
-    st.set_page_config("Public Quote", layout="wide")
-    params = st.experimental_get_query_params()
-
-    if st.session_state.first_run and params and 'Inventory' in params and params['Inventory']:
-        st.session_state.ticketN = params['Inventory'][0]
-        st.experimental_rerun()
-    else:
-        inventoryPage(st.session_state.ticketN)
+    inventoryPage()
 if __name__ == "__main__":
     main()
