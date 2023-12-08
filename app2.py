@@ -135,6 +135,7 @@ def inventoryPage():
     #         st.table(st.session_state.partsDF)
 
 def main():
+    st.set_page_config("Inventory Search", layout="wide")
     inventoryPage()
 if __name__ == "__main__":
     main()
