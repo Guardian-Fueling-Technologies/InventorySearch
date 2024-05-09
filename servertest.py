@@ -18,12 +18,16 @@ def inventory_Part(input):
 
     sql_query = f"""EXEC [CF_PART_LOOK_UP] '%{input}%';"""
     cursor.execute(sql_query)
-    sql_query = cursor.fetchall()
-    rows_transposed = [sql_query for sql_query in zip(*sql_query)]
-    partNameDf = pd.DataFrame(dict(zip(['ITEMNMBR', 'ITEMDESC', "QTY"], rows_transposed)))
+    
+    columns = [column[0] for column in cursor.description]
+    rows = cursor.fetchall()
+    columns_transposed = list(zip(*rows))
+    data = {col: col_data for col, col_data in zip(columns, columns_transposed)}
+    partNameDf = pd.DataFrame(data)
+
     cursor.close()
     conn.close()
-    return partNameDf
+    return partNameDf, columns
 
 def inventory_Item(input):
     conn_str = f"DRIVER={SQLaddress};SERVER={server};DATABASE={database};UID={username};PWD={password};TrustServerCertificate=yes;"

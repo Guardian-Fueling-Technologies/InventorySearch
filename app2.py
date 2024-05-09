@@ -35,6 +35,8 @@ if "ticketN" not in st.session_state:
     st.session_state.ticketN = None
 if "pricingDf" not in st.session_state:
     st.session_state.pricingDf = None
+if "pricingCol" not in st.session_state:
+    st.session_state.pricingCol = None
 if "partsDF" not in st.session_state:
     st.session_state.partsDF = None
 if "ticketDf" not in st.session_state:
@@ -78,14 +80,13 @@ def inventoryPage():
     if st.session_state.selected_rows is None or len(st.session_state.selected_rows)==0:
         st.session_state.input_letters = st.text_input("First enter Part Id or Parts Desc:", max_chars=50, key="ItemDES").upper()
         if st.session_state.input_letters != st.session_state.prev_input_letters and len(st.session_state.input_letters) > 0:
-            st.session_state.pricingDf = inventory_Part(st.session_state.input_letters)
+            st.session_state.pricingDf, st.session_state.pricingCol = inventory_Part(st.session_state.input_letters)
             st.session_state.prev_input_letters = st.session_state.input_letters
         if st.session_state.pricingDf is not None and st.session_state.pricingDf.empty:
             st.error("Please enter a valid Part Desc.")
         elif st.session_state.pricingDf is not None:
             df = pd.DataFrame(st.session_state.pricingDf)
-
-            gb = GridOptionsBuilder.from_dataframe(df[["ITEMNMBR", "ITEMDESC", "QTY"]])
+            gb = GridOptionsBuilder.from_dataframe(df[st.session_state.pricingCol])
             gb.configure_selection(selection_mode="single")
             gb.configure_side_bar()
             gridOptions = gb.build()
