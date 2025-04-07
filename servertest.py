@@ -2,25 +2,62 @@ import pandas as pd
 import pyodbc
 import json
 import os
+import re
 
 server = os.environ.get("serverGFT")
 database = os.environ.get("databaseGFT")
-username = os.environ.get("usernameGFT")
-password = os.environ.get("passwordGFT")
+username = os.environ.get("usernameINVGFT")
+password = os.environ.get("passwordINVGFT")
 SQLaddress = os.environ.get("addressGFT")
 
 parameter_value = "230524-0173"
 
-def inventory_Part(input):
+SQL_INJECTION_PATTERNS = re.compile(
+    r"""(?ix)           # Case-insensitive, verbose
+    (?:--|;|/\*|\*/|     # SQL meta-characters
+    ['"]|                # Quotes
+    \b(exec|drop|delete|insert|update|select|union|sleep|benchmark|xp_|sp_)\b)
+    """
+)
+
+def sanitize_input(value):
+    """
+    Recursively sanitize input against SQL injection attempts.
+    Raises ValueError if suspicious content is detected.
+    """
+    if isinstance(value, str):
+        if SQL_INJECTION_PATTERNS.search(value):
+            raise ValueError(f"Potential SQL injection detected in input: {value}")
+        return value
+
+    elif isinstance(value, (list, tuple)):
+        return [sanitize_input(v) for v in value]
+
+    elif isinstance(value, dict):
+        return {k: sanitize_input(v) for k, v in value.items()}
+
+    elif isinstance(value, (int, float, bool)) or value is None:
+        return value
+
+    else:
+        raise TypeError(f"Unsupported input type for SQL sanitization: {type(value)}")
+        
+def inventory_Part(user_input):
+    user_input = sanitize_input(user_input)
     conn_str = f"DRIVER={SQLaddress};SERVER={server};DATABASE={database};UID={username};PWD={password};TrustServerCertificate=yes;"
     conn = pyodbc.connect(conn_str)
     cursor = conn.cursor()
 
-    sql_query = f"""EXEC [CF_PART_LOOK_UP] '%{input}%';"""
-    cursor.execute(sql_query)
-    
+    # Stored procedure expects @Search, not @SearchPattern
+    sql_query = "EXEC [CF_PART_LOOK_UP] @Search = ?"
+    search_pattern = f"%{user_input}%"  # Add LIKE wildcards
+    cursor.execute(sql_query, (search_pattern,))  # Pass parameter safely
+
     columns = [column[0] for column in cursor.description]
     rows = cursor.fetchall()
+    if not rows:
+        return pd.DataFrame(), columns
+
     columns_transposed = list(zip(*rows))
     data = {col: col_data for col, col_data in zip(columns, columns_transposed)}
     partNameDf = pd.DataFrame(data)
@@ -30,66 +67,85 @@ def inventory_Part(input):
     return partNameDf, columns
 
 def inventory_Item(input):
+    input = sanitize_input(input)
     conn_str = f"DRIVER={SQLaddress};SERVER={server};DATABASE={database};UID={username};PWD={password};TrustServerCertificate=yes;"
-    conn = pyodbc.connect(conn_str)
-    cursor = conn.cursor()
+    conn = None
+    cursor = None
+    try:
+        conn = pyodbc.connect(conn_str)
+        cursor = conn.cursor()
+        sql_query = f"""EXEC [CF_PART_Search] '{input}';"""
+        cursor.execute(sql_query)
+        sql_query = cursor.fetchall()
+        rows_transposed = [sql_query for sql_query in zip(*sql_query)]
+        partNameDf = pd.DataFrame(dict(zip(['ITEMNMBR', 'ITEMDESC', "Location", "QTY"], rows_transposed)))
+        return partNameDf
+    except Exception as e:
+        print(f"An error occurred: {e}")
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
 
-    sql_query = f"""EXEC [CF_PART_Search] '{input}';"""
-    cursor.execute(sql_query)
-    sql_query = cursor.fetchall()
-    # print("item", sql_query)
-    rows_transposed = [sql_query for sql_query in zip(*sql_query)]
-    partNameDf = pd.DataFrame(dict(zip(['ITEMNMBR', 'ITEMDESC', "Location","QTY"], rows_transposed)))
-    cursor.close()
-    conn.close()
-    return partNameDf
 def getBinddes(input):
-    
     conn_str = f"DRIVER={SQLaddress};SERVER={server};DATABASE={database};UID={username};PWD={password};TrustServerCertificate=yes;"
-    conn = pyodbc.connect(conn_str)
-    cursor = conn.cursor()
-
-    sql_query = """Exec [CF_PART_LOOK_UP_streamlit] @Search = ?;"""
-    cursor.execute(sql_query, input)
-    sql_query = cursor.fetchall()
-    rows_transposed = [sql_query for sql_query in zip(*sql_query)]
-    partNameDf = pd.DataFrame(dict(zip(['ITEMNMBR', 'ITEMDESC'], rows_transposed)))
-    cursor.close()
-    conn.close()
-    return partNameDf
+    conn = None
+    cursor = None
+    try:
+        conn = pyodbc.connect(conn_str)
+        cursor = conn.cursor()
+        sql_query = """Exec [CF_PART_LOOK_UP_streamlit] @Search = ?;"""
+        cursor.execute(sql_query, input)
+        sql_query = cursor.fetchall()
+        rows_transposed = [sql_query for sql_query in zip(*sql_query)]
+        partNameDf = pd.DataFrame(dict(zip(['ITEMNMBR', 'ITEMDESC'], rows_transposed)))
+        return partNameDf
+    except Exception as e:
+        print(f"An error occurred: {e}")
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
 
 def getPartsPrice(partInfoDf):
     conn_str = f"DRIVER={SQLaddress};SERVER={server};DATABASE={database};UID={username};PWD={password};TrustServerCertificate=yes;"
-    conn = pyodbc.connect(conn_str)
-    cursor = conn.cursor()
-    
-    pricingDf = pd.DataFrame(columns=['ITEMNMBR', 'ITEMDESC', 'SellingPrice'])
-
-    for index, row in partInfoDf.iterrows():
-        item_num = row['ITEMNMBR']
-        customer_num = row['Bill_Customer_Number']
-    
-        sql_query = """Exec [CF_Univ_Quote_Pricing_streamlit] @ItemNum = ?, @CUSTNMBR = ?;"""
-        cursor.execute(sql_query, item_num, customer_num)
-        result = cursor.fetchall()
-        row_dict = {
-            'ITEMNMBR': item_num,
-            'ITEMDESC': "no Info",
-            'SellingPrice': 0
-        }
-        if result:
+    conn = None
+    cursor = None
+    try:
+        conn = pyodbc.connect(conn_str)
+        cursor = conn.cursor()
+        pricingDf = pd.DataFrame(columns=['ITEMNMBR', 'ITEMDESC', 'SellingPrice'])
+        for index, row in partInfoDf.iterrows():
+            item_num = row['ITEMNMBR']
+            customer_num = row['Bill_Customer_Number']
+            sql_query = """Exec [CF_Univ_Quote_Pricing_streamlit] @ItemNum = ?, @CUSTNMBR = ?;"""
+            cursor.execute(sql_query, item_num, customer_num)
+            result = cursor.fetchall()
             row_dict = {
-                'ITEMNMBR': result[0][0],
-                'ITEMDESC': result[0][1],
-                'SellingPrice': result[0][2]
+                'ITEMNMBR': item_num,
+                'ITEMDESC': "no Info",
+                'SellingPrice': 0
             }
-        pricingDf = pricingDf.append(row_dict, ignore_index=True)
-    
-    cursor.close()
-    conn.close()
-    return pricingDf
+            if result:
+                row_dict = {
+                    'ITEMNMBR': result[0][0],
+                    'ITEMDESC': result[0][1],
+                    'SellingPrice': result[0][2]
+                }
+            pricingDf = pricingDf.append(row_dict, ignore_index=True)
+        return pricingDf
+    except Exception as e:
+        print(f"An error occurred: {e}")
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
 
 def getAllPrice(ticketN):
+    ticketN = sanitize_input(ticketN)
     conn_str = f"DRIVER={SQLaddress};SERVER={server};DATABASE={database};UID={username};PWD={password};TrustServerCertificate=yes;"
     conn = pyodbc.connect(conn_str)
     cursor = conn.cursor()
@@ -121,7 +177,9 @@ def getAllPrice(ticketN):
     cursor.close()
     conn.close()
     return ticketDf, LRatesDf, TRatesDf, misc_ops_df
+
 def getDesc(ticket):
+    ticketN = sanitize_input(ticketN)
     conn_str = f"DRIVER={SQLaddress};SERVER={server};DATABASE={database};UID={username};PWD={password};TrustServerCertificate=yes;"
     conn = pyodbc.connect(conn_str)
     cursor = conn.cursor()
@@ -133,7 +191,9 @@ def getDesc(ticket):
     data = [list(row) for row in dataset]
     workDes = pd.DataFrame(data, columns=["Incurred", "Proposed"])
     return workDes
+    
 def getAllTicket(ticket):
+    ticketN = sanitize_input(ticketN)
     conn_str = f"DRIVER={SQLaddress};SERVER={server};DATABASE={database};UID={username};PWD={password};TrustServerCertificate=yes;"
     conn = pyodbc.connect(conn_str)
     cursor = conn.cursor()
@@ -287,6 +347,7 @@ def getBranch():
     return branchDf
 
 def getParentByTicket(ticket):
+    ticketN = sanitize_input(ticketN)
     conn_str = f"DRIVER={SQLaddress};SERVER={server};DATABASE={database};UID={username};PWD={password};TrustServerCertificate=yes;"
     conn = pyodbc.connect(conn_str)
     cursor = conn.cursor()
@@ -363,70 +424,95 @@ def getParent(branchName):
     return parentDf
 def updateParent(ticket, editable, ntequote, savetime, approved, declined, branchname, button):
     conn_str = f"DRIVER={SQLaddress};SERVER={server};DATABASE={database};UID={username};PWD={password};TrustServerCertificate=yes;"
-    conn = pyodbc.connect(conn_str)
-    cursor = conn.cursor()
-    if(ntequote=="NTE"):
-        ntequote = 3
-    else:
-        ntequote = 1
+    conn = None
+    cursor = None
+    try:
+        conn = pyodbc.connect(conn_str)
+        cursor = conn.cursor()
+        if(ntequote=="NTE"):
+            ntequote = 3
+        else:
+            ntequote = 1
 
-    select_query = '''
-        SELECT *
-        FROM [GFT].[dbo].[CF_Universal_Quote_Parent]
-        WHERE TicketID = ?
-    '''
-    cursor.execute(select_query, (ticket,))
-    firstdata = cursor.fetchall()
-    if button == "save":
-        if not firstdata:
-            insert_query = '''INSERT INTO [GFT].[dbo].[CF_Universal_Quote_Parent] (
-            TicketID, Status
-            ,NTE_QUOTE
-            ,Editable
-            ,Insertdate
-            ,Approvedate,Declinedate, BranchName) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'''
-            cursor.execute(insert_query, (ticket, "Pending", ntequote, 1, savetime, "1900-01-01 00:00:00.000", "1900-01-01 00:00:00.000", branchname))
-            conn.commit()
-        else:
-            update_query = '''
-                    UPDATE [GFT].[dbo].[CF_Universal_Quote_Parent]
-                    SET Status = ?, NTE_QUOTE = ?, Editable = ?, BranchName = ?
-                    WHERE TicketID = ? 
-                '''
-            cursor.execute(update_query, ("Pending", ntequote, 1, branchname, ticket))
-            conn.commit()
-    if button == "decline":
-        if not firstdata:
-            insert_query = '''INSERT INTO [GFT].[dbo].[CF_Universal_Quote_Parent] (
-            TicketID, Status
-            ,NTE_QUOTE
-            ,Editable
-            ,Insertdate
-            ,Approvedate,Declinedate, BranchName) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'''
-            cursor.execute(insert_query, (ticket, "Declined", ntequote, 1, declined, "1900-01-01 00:00:00.000", declined, branchname))
-            conn.commit()
-        else:
-            insert_query = '''UPDATE [GFT].[dbo].[CF_Universal_Quote_Parent]
-            SET Status = ?, NTE_QUOTE = ?, Editable = ?, Declinedate = ?
-            WHERE TicketID = ? '''
-            cursor.execute(insert_query, ("Declined", ntequote, 1, declined, ticket))
-            conn.commit()
-    if button == "approve":
-        if not firstdata:
-            insert_query = '''INSERT INTO [GFT].[dbo].[CF_Universal_Quote_Parent] (
-            TicketID, Status
-            ,NTE_QUOTE
-            ,Editable
-            ,Insertdate
-            ,Approvedate,Declinedate, BranchName) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'''
-            cursor.execute(insert_query, (ticket, "Approved", ntequote, 0, approved, approved, "1900-01-01 00:00:00.000", branchname))
-            conn.commit()
-        else:
-            insert_query = '''UPDATE [GFT].[dbo].[CF_Universal_Quote_Parent]
-            SET Status = ?, NTE_QUOTE = ?, Editable = ?, Approvedate = ?
-            WHERE TicketID = ? '''
-            cursor.execute(insert_query, ("Approved", ntequote, 0, approved, ticket))
-            conn.commit()
-    
-    cursor.close()
-    conn.close()
+        select_query = '''
+            SELECT *
+            FROM [GFT].[dbo].[CF_Universal_Quote_Parent]
+            WHERE TicketID = ?
+        '''
+        cursor.execute(select_query, (ticket,))
+        firstdata = cursor.fetchall()
+        if button == "save":
+            if not firstdata:
+                insert_query = '''INSERT INTO [GFT].[dbo].[CF_Universal_Quote_Parent] (
+                TicketID, Status
+                ,NTE_QUOTE
+                ,Editable
+                ,Insertdate
+                ,Approvedate,Declinedate, BranchName) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'''
+                cursor.execute(insert_query, (ticket, "Pending", ntequote, 1, savetime, "1900-01-01 00:00:00.000", "1900-01-01 00:00:00.000", branchname))
+                conn.commit()
+            else:
+                update_query = '''
+                        UPDATE [GFT].[dbo].[CF_Universal_Quote_Parent]
+                        SET Status = ?, NTE_QUOTE = ?, Editable = ?, BranchName = ?
+                        WHERE TicketID = ? 
+                    '''
+                cursor.execute(update_query, ("Pending", ntequote, 1, branchname, ticket))
+                conn.commit()
+        if button == "decline":
+            if not firstdata:
+                insert_query = '''INSERT INTO [GFT].[dbo].[CF_Universal_Quote_Parent] (
+                TicketID, Status
+                ,NTE_QUOTE
+                ,Editable
+                ,Insertdate
+                ,Approvedate,Declinedate, BranchName) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'''
+                cursor.execute(insert_query, (ticket, "Declined", ntequote, 1, declined, "1900-01-01 00:00:00.000", declined, branchname))
+                conn.commit()
+            else:
+                insert_query = '''UPDATE [GFT].[dbo].[CF_Universal_Quote_Parent]
+                SET Status = ?, NTE_QUOTE = ?, Editable = ?, Declinedate = ?
+                WHERE TicketID = ? '''
+                cursor.execute(insert_query, ("Declined", ntequote, 1, declined, ticket))
+                conn.commit()
+        if button == "approve":
+            if not firstdata:
+                insert_query = '''INSERT INTO [GFT].[dbo].[CF_Universal_Quote_Parent] (
+                TicketID, Status
+                ,NTE_QUOTE
+                ,Editable
+                ,Insertdate
+                ,Approvedate,Declinedate, BranchName) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'''
+                cursor.execute(insert_query, (ticket, "Approved", ntequote, 0, approved, approved, "1900-01-01 00:00:00.000", branchname))
+                conn.commit()
+            else:
+                insert_query = '''UPDATE [GFT].[dbo].[CF_Universal_Quote_Parent]
+                SET Status = ?, NTE_QUOTE = ?, Editable = ?, Approvedate = ?
+                WHERE TicketID = ? '''
+                cursor.execute(insert_query, ("Approved", ntequote, 0, approved, ticket))
+                conn.commit()
+    except Exception as e:
+        print(f"An error occurred: {e}")
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+
+def execute_query(query, params):
+    conn_str = f"DRIVER={SQLaddress};SERVER={server};DATABASE={database};UID={username};PWD={password};TrustServerCertificate=yes;"
+    conn = None
+    cursor = None
+    try:
+        conn = pyodbc.connect(conn_str)
+        cursor = conn.cursor()
+        cursor.execute(query, params)
+        result = cursor.fetchall()
+        return result
+    except Exception as e:
+        print(f"An error occurred: {e}")
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
