@@ -16,10 +16,9 @@ SQL_INJECTION_PATTERNS = re.compile(
     r"""(?ix)           # Case-insensitive, verbose
     (?:--|;|/\*|\*/|     # SQL meta-characters
     ['"]|                # Quotes
-    \b(exec|drop|delete|insert|update|select|union|sleep|benchmark|xp_|sp_)\b)
+    \b(exec|drop|delete|insert|update|select|sleep|benchmark|xp_|sp_)\b)
     """
 )
-
 def sanitize_input(value):
     """
     Recursively sanitize input against SQL injection attempts.
