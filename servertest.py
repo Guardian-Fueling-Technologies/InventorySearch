@@ -3,9 +3,12 @@ import pyodbc
 import json
 import os
 import re
+import re
 
 server = os.environ.get("serverGFT")
 database = os.environ.get("databaseGFT")
+username = os.environ.get("usernameINVGFT")
+password = os.environ.get("passwordINVGFT")
 username = os.environ.get("usernameINVGFT")
 password = os.environ.get("passwordINVGFT")
 SQLaddress = os.environ.get("addressGFT")
@@ -53,8 +56,16 @@ def inventory_Part(user_input):
     search_pattern = f"%{user_input}%"  # Add LIKE wildcards
     cursor.execute(sql_query, (search_pattern,))  # Pass parameter safely
 
+    # Stored procedure expects @Search, not @SearchPattern
+    sql_query = "EXEC [CF_PART_LOOK_UP] @Search = ?"
+    search_pattern = f"%{user_input}%"  # Add LIKE wildcards
+    cursor.execute(sql_query, (search_pattern,))  # Pass parameter safely
+
     columns = [column[0] for column in cursor.description]
     rows = cursor.fetchall()
+    if not rows:
+        return pd.DataFrame(), columns
+
     if not rows:
         return pd.DataFrame(), columns
 
@@ -67,6 +78,7 @@ def inventory_Part(user_input):
     return partNameDf, columns
 
 def inventory_Item(input):
+    input = sanitize_input(input)
     input = sanitize_input(input)
     conn_str = f"DRIVER={SQLaddress};SERVER={server};DATABASE={database};UID={username};PWD={password};TrustServerCertificate=yes;"
     conn = None
@@ -88,8 +100,45 @@ def inventory_Item(input):
         if conn:
             conn.close()
 
+    conn = None
+    cursor = None
+    try:
+        conn = pyodbc.connect(conn_str)
+        cursor = conn.cursor()
+        sql_query = f"""EXEC [CF_PART_Search] '{input}';"""
+        cursor.execute(sql_query)
+        sql_query = cursor.fetchall()
+        rows_transposed = [sql_query for sql_query in zip(*sql_query)]
+        partNameDf = pd.DataFrame(dict(zip(['ITEMNMBR', 'ITEMDESC', "Location", "QTY"], rows_transposed)))
+        return partNameDf
+    except Exception as e:
+        print(f"An error occurred: {e}")
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+
 def getBinddes(input):
     conn_str = f"DRIVER={SQLaddress};SERVER={server};DATABASE={database};UID={username};PWD={password};TrustServerCertificate=yes;"
+    conn = None
+    cursor = None
+    try:
+        conn = pyodbc.connect(conn_str)
+        cursor = conn.cursor()
+        sql_query = """Exec [CF_PART_LOOK_UP_streamlit] @Search = ?;"""
+        cursor.execute(sql_query, input)
+        sql_query = cursor.fetchall()
+        rows_transposed = [sql_query for sql_query in zip(*sql_query)]
+        partNameDf = pd.DataFrame(dict(zip(['ITEMNMBR', 'ITEMDESC'], rows_transposed)))
+        return partNameDf
+    except Exception as e:
+        print(f"An error occurred: {e}")
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
     conn = None
     cursor = None
     try:
@@ -143,8 +192,41 @@ def getPartsPrice(partInfoDf):
             cursor.close()
         if conn:
             conn.close()
+    conn = None
+    cursor = None
+    try:
+        conn = pyodbc.connect(conn_str)
+        cursor = conn.cursor()
+        pricingDf = pd.DataFrame(columns=['ITEMNMBR', 'ITEMDESC', 'SellingPrice'])
+        for index, row in partInfoDf.iterrows():
+            item_num = row['ITEMNMBR']
+            customer_num = row['Bill_Customer_Number']
+            sql_query = """Exec [CF_Univ_Quote_Pricing_streamlit] @ItemNum = ?, @CUSTNMBR = ?;"""
+            cursor.execute(sql_query, item_num, customer_num)
+            result = cursor.fetchall()
+            row_dict = {
+                'ITEMNMBR': item_num,
+                'ITEMDESC': "no Info",
+                'SellingPrice': 0
+            }
+            if result:
+                row_dict = {
+                    'ITEMNMBR': result[0][0],
+                    'ITEMDESC': result[0][1],
+                    'SellingPrice': result[0][2]
+                }
+            pricingDf = pricingDf.append(row_dict, ignore_index=True)
+        return pricingDf
+    except Exception as e:
+        print(f"An error occurred: {e}")
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
 
 def getAllPrice(ticketN):
+    ticketN = sanitize_input(ticketN)
     ticketN = sanitize_input(ticketN)
     conn_str = f"DRIVER={SQLaddress};SERVER={server};DATABASE={database};UID={username};PWD={password};TrustServerCertificate=yes;"
     conn = pyodbc.connect(conn_str)
@@ -178,7 +260,9 @@ def getAllPrice(ticketN):
     conn.close()
     return ticketDf, LRatesDf, TRatesDf, misc_ops_df
 
+
 def getDesc(ticket):
+    ticketN = sanitize_input(ticketN)
     ticketN = sanitize_input(ticketN)
     conn_str = f"DRIVER={SQLaddress};SERVER={server};DATABASE={database};UID={username};PWD={password};TrustServerCertificate=yes;"
     conn = pyodbc.connect(conn_str)
@@ -192,7 +276,9 @@ def getDesc(ticket):
     workDes = pd.DataFrame(data, columns=["Incurred", "Proposed"])
     return workDes
     
+    
 def getAllTicket(ticket):
+    ticketN = sanitize_input(ticketN)
     ticketN = sanitize_input(ticketN)
     conn_str = f"DRIVER={SQLaddress};SERVER={server};DATABASE={database};UID={username};PWD={password};TrustServerCertificate=yes;"
     conn = pyodbc.connect(conn_str)
@@ -348,6 +434,7 @@ def getBranch():
 
 def getParentByTicket(ticket):
     ticketN = sanitize_input(ticketN)
+    ticketN = sanitize_input(ticketN)
     conn_str = f"DRIVER={SQLaddress};SERVER={server};DATABASE={database};UID={username};PWD={password};TrustServerCertificate=yes;"
     conn = pyodbc.connect(conn_str)
     cursor = conn.cursor()
@@ -424,6 +511,15 @@ def getParent(branchName):
     return parentDf
 def updateParent(ticket, editable, ntequote, savetime, approved, declined, branchname, button):
     conn_str = f"DRIVER={SQLaddress};SERVER={server};DATABASE={database};UID={username};PWD={password};TrustServerCertificate=yes;"
+    conn = None
+    cursor = None
+    try:
+        conn = pyodbc.connect(conn_str)
+        cursor = conn.cursor()
+        if(ntequote=="NTE"):
+            ntequote = 3
+        else:
+            ntequote = 1
     conn = None
     cursor = None
     try:
