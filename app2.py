@@ -77,11 +77,19 @@ if 'expand_collapse_state' not in st.session_state:
 #     st.session_state.filtered_ticket = [event for event in st.session_state.filtered_ticket if event['BranchShortName'] in st.session_state.selected_branches]
 
 def inventoryPage():
-    if st.session_state.selected_rows is None or len(st.session_state.selected_rows)==0:
-        st.session_state.input_letters = st.text_input("First enter Part Id or Parts Desc:", max_chars=50, key="ItemDES").upper()
+    st.error("Union is a SQL key word please input itemNMBR directly for all union related search, maxchar is 15 characters")
+    if st.session_state.selected_rows is None or len(st.session_state.selected_rows) == 0:
+        st.session_state.input_letters = st.text_input("First enter Part Id or Parts Desc:", max_chars=15, key="ItemDES").upper()
+        
         if st.session_state.input_letters != st.session_state.prev_input_letters and len(st.session_state.input_letters) > 0:
-            st.session_state.pricingDf, st.session_state.pricingCol = inventory_Part(st.session_state.input_letters)
+            try:
+                st.session_state.pricingDf, st.session_state.pricingCol = inventory_Part(st.session_state.input_letters)
+            except Exception as e:
+                st.error(f"Search failed: potential hack alert")
+                return
+
             st.session_state.prev_input_letters = st.session_state.input_letters
+
         if st.session_state.pricingDf is not None and st.session_state.pricingDf.empty:
             st.error("Please enter a valid Part Desc.")
         elif st.session_state.pricingDf is not None:
