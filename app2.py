@@ -1,5 +1,9 @@
 import streamlit as st
 import pandas as pd
+import socket
+import smtplib
+import requests
+from email.message import EmailMessage
 from PIL import Image
 import fitz
 from st_aggrid import GridOptionsBuilder, AgGrid, GridUpdateMode, ColumnsAutoSizeMode
@@ -16,7 +20,6 @@ from servertest import inventory_Item
 from servertest import getPartsPrice
 from servertest import getBranch
 from servertest import getParent
-from servertest import updateParent
 from servertest import getParentByTicket
 from datetime import datetime
 from reportlab.pdfgen import canvas
@@ -26,8 +29,46 @@ from reportlab.lib import colors
 from reportlab.platypus import Paragraph
 import numpy as np
 import re
+import json
 from reportlab.graphics.renderPM import PMCanvas
 from decimal import Decimal
+import os
+from twilio.rest import Client
+# ["+19046767222","+13213770708"]
+
+def notify_it_on_error(ip_address, user_input):
+    try:
+        # Get Twilio credentials from environment variables
+        account_sid = os.environ.get("account_sid")
+        auth_token = os.environ.get("auth_token")
+        from_number = os.environ.get("twilio_from") 
+        to_numbers = os.environ.get("twilio_to")
+
+        client = Client(account_sid, auth_token)
+
+        message_body = (
+            f"⚠️ Inventory Search Failed.\n"
+            f"IP: {ip_address}\n"
+            f"Input: {user_input}\n"
+            f"Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+        )
+        to_numbers = json.loads(to_numbers)
+        print(to_numbers)
+
+
+
+        # Send SMS to each recipient
+        for to_number in to_numbers:
+            message = client.messages.create(
+                body=message_body,
+                from_=from_number,
+                to=to_number
+            )
+            print(f"SMS sent to {to_number}")
+
+    except Exception as sms_error:
+        print(f"SMS failed to send: {sms_error}")
+
 
 current_date = datetime.now()
 formatted_date = current_date.strftime("%m/%d/%Y")
@@ -85,7 +126,15 @@ def inventoryPage():
             try:
                 st.session_state.pricingDf, st.session_state.pricingCol = inventory_Part(st.session_state.input_letters)
             except Exception as e:
-                st.error(f"Search failed: potential hack alert")
+                st.error("Search failed: text provided invalid")
+
+                # Get user IP (if possible; fallback to hostname IP)
+                try:
+                    ip_address = requests.get("https://api.ipify.org").text
+                except:
+                    ip_address = socket.gethostbyname(socket.gethostname())
+
+                notify_it_on_error(ip_address, st.session_state.input_letters)
                 return
 
             st.session_state.prev_input_letters = st.session_state.input_letters
