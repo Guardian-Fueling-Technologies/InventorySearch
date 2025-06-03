@@ -53,9 +53,6 @@ def notify_it_on_error(ip_address, user_input):
             f"Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
         )
         to_numbers = json.loads(to_numbers)
-        print(to_numbers)
-
-
 
         # Send SMS to each recipient
         for to_number in to_numbers:
@@ -118,9 +115,9 @@ if 'expand_collapse_state' not in st.session_state:
 #     st.session_state.filtered_ticket = [event for event in st.session_state.filtered_ticket if event['BranchShortName'] in st.session_state.selected_branches]
 
 def inventoryPage():
-    st.error("Union is a SQL key word please input itemNMBR directly for all union related search, maxchar is 15 characters")
+    st.error("Union is a SQL key word please input itemNMBR directly for all union related search, maxchar is 30 characters")
     if st.session_state.selected_rows is None or len(st.session_state.selected_rows) == 0:
-        st.session_state.input_letters = st.text_input("First enter Part Id or Parts Desc:", max_chars=15, key="ItemDES").upper()
+        st.session_state.input_letters = st.text_input("First enter Part Id or Parts Desc:", max_chars=30, key="ItemDES").upper()
         
         if st.session_state.input_letters != st.session_state.prev_input_letters and len(st.session_state.input_letters) > 0:
             try:

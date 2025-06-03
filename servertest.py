@@ -3,7 +3,6 @@ import pyodbc
 import json
 import os
 import re
-import re
 
 server = os.environ.get("serverGFT")
 database = os.environ.get("databaseGFT")
