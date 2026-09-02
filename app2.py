@@ -154,7 +154,7 @@ def inventoryPage():
             st.session_state.selected_rows = data["selected_rows"]
             if len(st.session_state.selected_rows) != 0:
                 st.table(st.session_state.selected_rows)
-                st.experimental_rerun()
+                st.rerun()
     else:
         if len(st.session_state.selected_rows) != 0:
             # st.table(st.session_state.selected_rows)

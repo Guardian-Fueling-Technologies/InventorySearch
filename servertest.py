@@ -182,7 +182,7 @@ def getPartsPrice(partInfoDf):
                     'ITEMDESC': result[0][1],
                     'SellingPrice': result[0][2]
                 }
-            pricingDf = pricingDf.append(row_dict, ignore_index=True)
+            pricingDf = pd.concat([pricingDf, pd.DataFrame([row_dict])], ignore_index=True)
         return pricingDf
     except Exception as e:
         print(f"An error occurred: {e}")
@@ -214,7 +214,7 @@ def getPartsPrice(partInfoDf):
                     'ITEMDESC': result[0][1],
                     'SellingPrice': result[0][2]
                 }
-            pricingDf = pricingDf.append(row_dict, ignore_index=True)
+            pricingDf = pd.concat([pricingDf, pd.DataFrame([row_dict])], ignore_index=True)
         return pricingDf
     except Exception as e:
         print(f"An error occurred: {e}")
