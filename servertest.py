@@ -3,6 +3,7 @@ import pyodbc
 import json
 import os
 import re
+from decimal import Decimal
 
 server = os.environ.get("serverGFT")
 database = os.environ.get("databaseGFT")
@@ -11,6 +12,13 @@ password = os.environ.get("passwordINVGFT")
 username = os.environ.get("usernameINVGFT")
 password = os.environ.get("passwordINVGFT")
 SQLaddress = os.environ.get("addressGFT")
+
+def clean_types(df):
+    # SQL Server sometimes returns numbers as Decimal, which the results grid can't display properly.
+    # Convert those to plain floats so they show up as normal numbers instead of "[object Object]".
+    for col in df.columns:
+        df[col] = df[col].apply(lambda x: float(x) if isinstance(x, Decimal) else x)
+    return df
 
 parameter_value = "230524-0173"
 
@@ -21,6 +29,7 @@ SQL_INJECTION_PATTERNS = re.compile(
     \b(exec|drop|delete|insert|update|select|union|sleep|benchmark|xp_|sp_)\b)
     """
 )
+
 
 def sanitize_input(value):
     """
@@ -72,6 +81,9 @@ def inventory_Part(user_input):
     data = {col: col_data for col, col_data in zip(columns, columns_transposed)}
     partNameDf = pd.DataFrame(data)
 
+    # Clean data types
+    partNameDf = clean_types(partNameDf)
+
     cursor.close()
     conn.close()
     return partNameDf, columns
@@ -90,6 +102,7 @@ def inventory_Item(input):
         sql_query = cursor.fetchall()
         rows_transposed = [sql_query for sql_query in zip(*sql_query)]
         partNameDf = pd.DataFrame(dict(zip(['ITEMNMBR', 'ITEMDESC', "Location", "QTY"], rows_transposed)))
+        partNameDf = clean_types(partNameDf)
         return partNameDf
     except Exception as e:
         print(f"An error occurred: {e}")
@@ -109,6 +122,7 @@ def inventory_Item(input):
         sql_query = cursor.fetchall()
         rows_transposed = [sql_query for sql_query in zip(*sql_query)]
         partNameDf = pd.DataFrame(dict(zip(['ITEMNMBR', 'ITEMDESC', "Location", "QTY"], rows_transposed)))
+        partNameDf = clean_types(partNameDf)
         return partNameDf
     except Exception as e:
         print(f"An error occurred: {e}")
