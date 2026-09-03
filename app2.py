@@ -158,7 +158,13 @@ def inventoryPage():
     else:
         if len(st.session_state.selected_rows) != 0:
             # st.table(st.session_state.selected_rows)
-            st.session_state.partsDF = inventory_Item(st.session_state.selected_rows[0]["ITEMNMBR"])
+            selected = st.session_state.selected_rows
+            if isinstance(selected, pd.DataFrame):
+                selected_item = selected.iloc[0]["ITEMNMBR"]
+            else:
+                selected_item = selected[0]["ITEMNMBR"]
+            st.session_state.partsDF = inventory_Item(selected_item)
+
             
             if(len(st.session_state.partsDF) == 0):
                 st.write("no parts available/ contact parts department")
