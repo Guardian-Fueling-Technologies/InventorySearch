@@ -151,7 +151,7 @@ def inventoryPage():
                         allow_unsafe_jscode=True,
                         update_mode=GridUpdateMode.SELECTION_CHANGED,
                         columns_auto_size_mode=ColumnsAutoSizeMode.FIT_CONTENTS)
-            st.session_state.selected_rows = data["selected_rows"]
+            st.session_state.selected_rows = data["selected_rows"] if data["selected_rows"] is not None else []
             if len(st.session_state.selected_rows) != 0:
                 st.table(st.session_state.selected_rows)
                 st.rerun()
